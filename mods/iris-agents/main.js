@@ -3,7 +3,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, appHome, readTextFile } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -72,10 +72,37 @@ export default class Agents extends View {
   init(_props, cx) {
     if (props()?.sortMenu) return;
     this.folded = new Set();
+    this.bridge = {};
+    this.refreshBridge(cx);
+    cx.timer.every(3000, cx => this.refreshBridge(cx));
     // Each agent's last state and when it changed (ms), kept across restarts.
     this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}");
     this.pins = JSON.parse(localStorage.getItem("pins") ?? "[]");
     cx.timer.every(30000, (cx) => cx.notify());
+  }
+
+  refreshBridge(cx) {
+    if (this.bridgeLoading) return;
+    this.bridgeLoading = true;
+    cx.spawn(async cx => {
+      try {
+        const raw = await readTextFile(`${appHome()}/data/iris-subagents.json`);
+        const value = raw ? JSON.parse(raw) : null;
+        this.bridge = value?.version === 1 && value.terminals && typeof value.terminals === "object" ? value.terminals : {};
+      } catch { this.bridge = {}; }
+      finally { this.bridgeLoading = false; cx.notify(); }
+    });
+  }
+
+  bridgeKids(a) {
+    if (a.address.includes("/")) return [];
+    const entry = this.bridge?.[a.address];
+    const provider = a.app === "codex" ? "codex" : a.app === "claude-code" || a.app === "claude" ? "claude" : null;
+    if (!provider || entry?.provider !== provider || !entry.agents || typeof entry.agents !== "object") return [];
+    return Object.entries(entry.agents).slice(0, 100).map(([id, child]) => ({
+      t: { address: `bridge:${id}`, status: "working", name: typeof child?.name === "string" ? child.name : "Subagent", program: a.program, bridge: true },
+      lines: ["└"],
+    }));
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
@@ -187,7 +214,7 @@ export default class Agents extends View {
       .text_size(12.5)
       .when(on, (el) => el.bg(t.raised))
       .hover((s) => s.bg(t.hover))
-      .on_click(() => this.peek(k.address))
+      .when(!k.bridge, el => el.on_click(() => this.peek(k.address)))
       .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
@@ -230,7 +257,7 @@ export default class Agents extends View {
     setAgentOrder(list.map((a) => a.address));
 
     const withKids = (a, i) => {
-      const subs = collapsed ? [] : this.tree(all, a.address);
+      const subs = collapsed ? [] : [...this.tree(all, a.address), ...this.bridgeKids(a)];
       const r = row(a, i, subs);
       if (this.folded.has(a.address)) return [r];
       return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
@@ -259,7 +286,7 @@ export default class Agents extends View {
           cx.notify();
         })
         .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(11).flex_none())
-        .when(!open, (el) => el.child(String(subs.length)));
+        .child(div().text_size(10).text_color(t.muted).child(String(subs.length)));
     };
 
     // A row reads "space \u00b7 detail": the detail is a tab someone named or the
