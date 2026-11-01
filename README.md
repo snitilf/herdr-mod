@@ -1,48 +1,67 @@
-# Herdr customizations
+# Iris for Herdr
 
-This repository is the source of truth for the Iris Herdr workspace and its customizations.
-Herdr reads its live configuration from `~/.config/herdr-app`, and Codex reads themes from `~/.codex/themes`.
+A dark, pastel-blue workspace for [Herdr](https://github.com/herdrdev/herdr-app), with a matching terminal palette, custom sidebars, and tools for working across repositories.
 
-## Contents
+## Features
 
-- `layouts/`: the Iris workspace layout.
-- `mods/`: the customized Spaces, Agents, Files, and Changes panels.
-- `themes/`: the Iris interface and terminal palette.
-- `codex-themes/`: the matching Codex syntax theme.
-- `fonts/`: Paper Mono and its license.
-- `hooks/`: the local Codex and Claude Code subagent lifecycle bridge.
-- `scripts/`: local sync and hook installation tools.
-- `tests/`: tests for this repository.
+- **Iris theme:** a dark interface and terminal palette, plus a matching Codex theme.
+- **Spaces and agents:** custom sidebars with nested active subagents for local Codex and Claude Code sessions.
+- **Files and changes:** browse a folder and see changes grouped by repository, even when the folder itself is not a repository.
+- **Paper Mono:** a monospaced font included with the workspace.
 
-The Herdr layout and mods derive from Herdr App, available under the Apache 2.0 license at https://github.com/herdrdev/herdr-app.
-Paper Mono is distributed under the SIL Open Font License in `fonts/OFL.txt`.
+## Setup
 
-Customization decisions live in `../docs/` outside this repository.
+Install Herdr and Python 3, then clone this repository.
+From the repository directory, preview and copy the files into your local Herdr configuration:
 
-## Sync
+```sh
+python3 scripts/sync.py
+python3 scripts/sync.py --apply
+```
 
-Run `python3 scripts/sync.py` to preview changes and detect drift.
-Run `python3 scripts/sync.py --apply` to copy source files to the live configuration.
-The script refuses to overwrite live files changed since the last successful sync.
-It does not delete live files or change application state.
-Validate changed mods with `herdr-app check` and inspect them in Herdr.
+Select the layout in Herdr, or run:
 
-## Subagent visibility
+```sh
+herdr-app do layout.switch '{"name":"iris-workspace"}'
+```
 
-The Agents panel can show active Codex and Claude Code subagents beneath their local parent agent.
-The integration uses provider lifecycle hooks and the Herdr terminal ID, and does not read or store conversation transcripts.
-The state file contains session and agent identifiers, agent types, and the associated terminal ID.
-Remote sessions and processes without `HC_TERMINAL_ID` are not supported.
-Unexpected termination can leave stale state until the next session starts in that terminal.
+The layout uses the Iris theme.
+The sync also copies the matching Codex theme and font files, but does not select the Codex theme or install a system font.
 
-Run `python3 scripts/install_subagent_hooks.py` to preview hook installation, then `python3 scripts/install_subagent_hooks.py --apply` to install it without replacing existing hooks.
-The hook command points to this repository by absolute path.
-After moving the repository, remove the old bridge entries from the provider hook files and rerun the installer.
-New provider sessions may be needed to pick up hook changes.
-In Codex, review and trust the installed hook in `/hooks` if prompted.
+The sync tool checks for changes made directly to live files and stops if it finds a conflict.
+It does not delete live files or change the active layout.
 
-## Verification
+## Subagents
 
-Run `python3 -m unittest discover -s tests -v` for the repository tests.
-Validate changed mods with `herdr-app check` and inspect them in Herdr.
-Real Codex and Claude Code subagent lifecycles should also be checked in active Herdr sessions after hook installation.
+To show active Codex and Claude Code subagents in the Agents sidebar, preview and install the hooks:
+
+```sh
+python3 scripts/install_subagent_hooks.py
+python3 scripts/install_subagent_hooks.py --apply
+```
+
+The installer adds hooks without replacing existing ones.
+Start a new agent session to pick up changes and review the hooks in Codex with `/hooks` if prompted.
+The hooks refer to this checkout by its absolute path, so remove the old bridge entries and rerun the installer if you move it.
+
+The sidebar shows activity and agent types, but does not open a subagent's conversation.
+It supports local Herdr sessions that provide `HC_TERMINAL_ID`.
+The bridge stores session and agent IDs, agent types, and terminal IDs in a local state file.
+It does not store conversation transcripts.
+An unexpected exit can leave stale state until a new session starts in that terminal.
+
+## Development
+
+Run the tests with:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+Check a changed mod with `herdr-app check mods/<mod-name>` and inspect it in Herdr.
+See [AGENTS.md](AGENTS.md) for repository instructions.
+
+## Credits
+
+The layout and mods build on [Herdr App](https://github.com/herdrdev/herdr-app), which is available under the Apache 2.0 license.
+Paper Mono is distributed under the SIL Open Font License; see [fonts/OFL.txt](fonts/OFL.txt).
