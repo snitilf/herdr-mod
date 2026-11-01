@@ -8,7 +8,7 @@ import re
 import sys
 import tempfile
 
-VALID_TERMINAL = re.compile(r'^t[0-9]+$')
+VALID_TERMINAL = re.compile(r'^t[0-9a-f]+$')
 EVENTS = {'SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop'}
 
 
@@ -30,7 +30,9 @@ def update(state, provider, terminal, event):
         if not current or current.get('session') != session or current.get('provider') != provider:
             terminals[terminal] = {'provider': provider, 'session': session, 'agents': {}}
         return state
-    if not current and kind == 'SubagentStart':
+    if kind == 'SubagentStart' and (not current or (
+        not current.get('agents') and (current.get('session') != session or current.get('provider') != provider)
+    )):
         current = {'provider': provider, 'session': session, 'agents': {}}
         terminals[terminal] = current
     if not current or current.get('session') != session or current.get('provider') != provider:
@@ -49,7 +51,11 @@ def update(state, provider, terminal, event):
         name = ''.join(c if c.isprintable() else ' ' for c in name).strip()[:80] or 'Subagent'
         if name.casefold() == 'default':
             name = 'Agent'
-        agents[agent] = {'name': name}
+        child = {'name': name}
+        transcript = event.get('transcript_path')
+        if isinstance(transcript, str) and transcript and len(transcript) <= 4096:
+            child['transcript'] = transcript
+        agents[agent] = child
     elif kind == 'SubagentStop':
         agents.pop(agent, None)
     return state

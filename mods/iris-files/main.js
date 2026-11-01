@@ -14,7 +14,7 @@ function chooseFolder(cx) {
   const tab = focused()?.tab;
   if (!tab || location().on) return;
   cx.spawn(async cx => {
-    const folder = await pickFolder({ prompt: "Choose a folder for Files and Changes" });
+    const folder = await pickFolder({ prompt: "choose a folder for files and changes" });
     if (folder) setShared("iris.panelRoots.v1", { ...(shared("iris.panelRoots.v1") ?? {}), [tab]: folder });
     cx.notify();
   });
@@ -22,8 +22,8 @@ function chooseFolder(cx) {
 function folderBar(t) {
   const f = focused(), loc = location();
   return h_flex().h(30).px(10).gap(8).items_center().border_b(1).border_color(t.border)
-    .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.muted).child(loc.cwd || "No folder"))
-    .when(!loc.on && Boolean(f?.tab), el => el.child(div().id("choose-folder").px(4).cursor_pointer().text_size(11).text_color(t.accent).on_click((_e,cx) => chooseFolder(cx)).child("Folder")));
+    .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.muted).child(loc.cwd || "no folder"))
+    .when(!loc.on && Boolean(f?.tab), el => el.child(div().id("choose-folder").px(4).cursor_pointer().text_size(11).text_color(t.accent).on_click((_e,cx) => chooseFolder(cx)).child("folder")));
 }
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 const PER_FOLDER = 500, TOTAL = 5000;
@@ -31,13 +31,13 @@ const PER_FOLDER = 500, TOTAL = 5000;
 async function directory(path, on) {
   if (!on && window()?.platform === "windows") {
     const r = await exec("powershell", ["-NoProfile", "-Command", "& { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object Name -ne '.git' | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint)) } }) | ConvertTo-Json -Compress } '" + path.replaceAll("'", "''") + "'"]);
-    if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
+    if (r.code !== 0) throw new Error(r.stderr || "cannot list this folder");
     const result = JSON.parse(r.stdout || "[]");
     return Array.isArray(result) ? result : [result];
   }
   const script = 'n=0; for p in "$1"/* "$1"/.[!.]* "$1"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; name=${p##*/}; [ "$name" = .git ] && continue; if [ -d "$p" ] && [ ! -L "$p" ]; then kind=d; else kind=f; fi; printf "%s\\0%s\\0" "$kind" "$name"; n=$((n+1)); [ "$n" -gt 500 ] && break; done; test -d "$1"';
   const r = await exec("sh", ["-c", script, "files", path], { on });
-  if (r.code !== 0) throw new Error(r.stderr || "Cannot list this folder");
+  if (r.code !== 0) throw new Error(r.stderr || "cannot list this folder");
   const fields = r.stdout.split("\0"), out = [];
   for (let i = 0; i + 1 < fields.length; i += 2) out.push({ name: fields[i + 1], dir: fields[i] === "d" });
   return out;
@@ -144,14 +144,14 @@ export default class Files extends View {
       try {
         const text = await readTextFile(`${root}/${path}`, { on });
         if (this.file !== path || !this.current(context)) return;
-        if (text === null) { this.fileError = "This file is no longer available"; return; }
-        if (text.includes("\0")) { this.fileError = "Binary file - no text preview"; return; }
+        if (text === null) { this.fileError = "this file is no longer available"; return; }
+        if (text.includes("\0")) { this.fileError = "binary file - no text preview"; return; }
         const t = theme(), ext = path.includes(".") ? path.split(".").pop() : "txt";
         this.code = EditorState.new({ language: LANG[ext] ?? ext, readonly: true,
           value: text.length > 400000 ? text.slice(0, 400000) + "\n… (file truncated)" : text,
           font_family: settings().font_family, font_size: 12,
           syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6 } });
-      } catch { if (this.file === path && this.current(context)) this.fileError = "Cannot preview this file (binary, too large, or unreadable)"; }
+      } catch { if (this.file === path && this.current(context)) this.fileError = "cannot preview this file (binary, too large, or unreadable)"; }
       finally { cx.notify(); }
     });
   }
@@ -178,12 +178,12 @@ export default class Files extends View {
     return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
-        .child(div().font_semibold().child("Files"))
+        .child(div().font_semibold().child("files"))
         .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
       .child(folderBar(t))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.rows("", 0, [], t))
-        .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
-        .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
-      .when(Boolean(this.file), el => el.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "Loading file…")));
+        .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "loading files…" : this.root ? "no files" : "no folder"))))
+        .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("file list limited to 500 entries per folder and 5,000 total")))))
+      .when(Boolean(this.file), el => el.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "loading file…")));
   }
 }

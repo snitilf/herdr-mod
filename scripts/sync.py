@@ -20,7 +20,7 @@ def files():
     result = []
     for folder in ('mods', 'themes', 'fonts', 'layouts'):
         for src in sorted((ROOT / folder).rglob('*')):
-            if src.is_file() and src.name not in ('OFL.txt', 'jsconfig.json', 'gpui-kit.d.ts'):
+            if src.is_file() and '__pycache__' not in src.parts and src.name not in ('OFL.txt', 'jsconfig.json', 'gpui-kit.d.ts'):
                 result.append((src, HERDR / src.relative_to(ROOT)))
     for src in sorted((ROOT / 'codex-themes').glob('*.tmTheme')):
         result.append((src, CODEX / src.name))

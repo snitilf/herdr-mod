@@ -3,7 +3,7 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, appHome, readTextFile } from "herdr";
+import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, appHome, readTextFile, exec } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -47,11 +47,11 @@ const kidStatus = (k, listed) => {
   return s === "error" ? "blocked" : s === "done" ? "idle" : s;
 };
 const SORTS = [
-  { id: "priority", label: "Priority", icon: "clock" },
-  { id: "grouped", label: "Grouped by space", icon: "layers" },
+  { id: "priority", label: "priority", icon: "clock" },
+  { id: "grouped", label: "grouped by space", icon: "layers" },
 ];
 const sortOf = () => SORTS.find((s) => s.id === shared("agents.sort")) ?? SORTS[0];
-const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
+const SECTION = { 4: "needs you", 3: "done", 2: "working", 1: "idle" };
 const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
 
 function duration(ms) {
@@ -71,6 +71,12 @@ function icon(p, size, color) {
 export default class Agents extends View {
   init(_props, cx) {
     if (props()?.sortMenu) return;
+    if (props()?.activityView) {
+      this.activity = null;
+      this.refreshActivity(cx);
+      cx.timer.every(3000, cx => this.refreshActivity(cx));
+      return;
+    }
     this.folded = new Set();
     this.bridge = {};
     this.refreshBridge(cx);
@@ -79,6 +85,50 @@ export default class Agents extends View {
     this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}");
     this.pins = JSON.parse(localStorage.getItem("pins") ?? "[]");
     cx.timer.every(30000, (cx) => cx.notify());
+  }
+
+  refreshActivity(cx) {
+    if (this.activityLoading) return;
+    const { provider, transcript, agentId } = props();
+    if (!transcript || !provider || !agentId) {
+      this.activity = { task: null, activity: [], error: "transcript is unavailable." };
+      cx.notify();
+      return;
+    }
+    this.activityLoading = true;
+    cx.spawn(async cx => {
+      try {
+        const result = await exec("python3", [`${appHome()}/mods/iris-agents/read_activity.py`, provider, transcript, agentId]);
+        const data = JSON.parse(result.stdout);
+        if (result.code !== 0 || !data || !Array.isArray(data.activity) || !data.activity.every(item => typeof item === "string") || (data.task !== null && typeof data.task !== "string") || (data.error !== null && typeof data.error !== "string")) throw new Error("Invalid activity response");
+        this.activity = { ...data, task: data.task || this.activity?.task || null };
+      } catch {
+        this.activity = { task: null, activity: [], error: "activity is unavailable." };
+      } finally {
+        this.activityLoading = false;
+        cx.notify();
+      }
+    });
+  }
+
+  activityView(t) {
+    const data = this.activity;
+    return v_flex().size_full().min_h(0).bg(t.surface).text_color(t.foreground)
+      .child(h_flex().h(46).px(16).flex_none().items_center().gap(10).border_b(1).border_color(t.border)
+        .child(div().flex_1().min_w(0).truncate().font_semibold().text_size(13).child(props().name || "subagent"))
+        .child(div().id("activity-close").px(7).py(3).rounded(5).text_color(t.muted).cursor_pointer()
+          .hover(el => el.bg(t.hover).text_color(t.foreground))
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click(() => closeOverlay(props().overlay)).child(svg("mods/workspace-chrome/x.svg").size(13))))
+      .child(v_flex().id("activity-content").flex_1().min_h(0).p(16).gap(12).overflow_y_scrollbar()
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .child(div().text_size(11).font_medium().text_color(t.dim).child("task"))
+        .child(div().text_size(13).text_color(data?.task ? t.foreground : t.muted).child(data ? (data.task || "task unavailable.") : "loading..."))
+        .child(div().pt(8).text_size(11).font_medium().text_color(t.dim).child("recent activity"))
+        .when(!data, el => el.child(div().text_size(13).text_color(t.muted).child("loading...")))
+        .when(Boolean(data?.error), el => el.child(div().text_size(13).text_color(t.muted).child(data.error)))
+        .when(Boolean(data && !data.error && !data.activity.length), el => el.child(div().text_size(13).text_color(t.muted).child("no recent activity.")))
+        .when(Boolean(data && !data.error), el => el.children(data.activity.map(item => div().p(10).rounded(7).bg(t.raised).text_size(12.5).child(item)))));
   }
 
   refreshBridge(cx) {
@@ -100,7 +150,7 @@ export default class Agents extends View {
     const provider = a.app === "codex" ? "codex" : a.app === "claude-code" || a.app === "claude" ? "claude" : null;
     if (!provider || entry?.provider !== provider || !entry.agents || typeof entry.agents !== "object") return [];
     return Object.entries(entry.agents).slice(0, 100).map(([id, child]) => ({
-      t: { address: `bridge:${id}`, status: "working", name: typeof child?.name === "string" ? child.name : "Subagent", program: a.program, bridge: true },
+      t: { address: `bridge:${id}`, status: "working", name: child?.name === "Agent" ? "agent" : typeof child?.name === "string" ? child.name : "subagent", program: a.program, bridge: true, provider, transcript: child?.transcript, session: entry.session, agentId: id },
       lines: ["└"],
     }));
   }
@@ -162,7 +212,7 @@ export default class Agents extends View {
       .p(5)
       .bg(t.popover)
       .text_size(12.8)
-      .child(div().px(8).pt(4).pb(6).text_size(11).text_color(t.dim).child("Sort agents"))
+      .child(div().px(8).pt(4).pb(6).text_size(11).text_color(t.dim).child("sort agents"))
       .children(SORTS.map((s) => h_flex()
         .id(`sort-${s.id}`)
         .h(31)
@@ -214,7 +264,10 @@ export default class Agents extends View {
       .text_size(12.5)
       .when(on, (el) => el.bg(t.raised))
       .hover((s) => s.bg(t.hover))
-      .when(!k.bridge, el => el.on_click(() => this.peek(k.address)))
+      .cursor_pointer()
+      .on_click(() => k.bridge
+        ? openOverlay({ mod: "iris-agents", kind: "window", width: 520, height: 420, props: { activityView: true, name: k.name, provider: k.provider, transcript: k.transcript, session: k.session, agentId: k.agentId } })
+        : this.peek(k.address))
       .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
         .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
         .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
@@ -223,12 +276,12 @@ export default class Agents extends View {
       .child(this.status(t, { status: st }, compact));
   }
 
-  // compact: a ! for blocked where a header already says "Needs you".
+  // compact: a ! for blocked where a header already says "needs you".
   status(t, a, compact = false) {
     const color = t[a.status] ?? t.dim;
     if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
     if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
-    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("Needs you");
+    if (a.status === "blocked") return div().flex_none().px(6).h(18).rounded(5).bg(t.blocked + "26").text_size(10.5).font_semibold().text_color(t.blocked).flex().items_center().child("needs you");
     // Idle: a ring; done: a dot.
     if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
@@ -237,6 +290,7 @@ export default class Agents extends View {
   render(cx) {
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
+    if (props()?.activityView) return this.activityView(t);
     const collapsed = narrow();
     const sort = sortOf();
     let list = agents();
@@ -333,7 +387,7 @@ export default class Agents extends View {
         .text_color(t.dim)
         .cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .tooltip(isPinned ? "Unpin" : "Pin to the top")
+        .tooltip(isPinned ? "unpin" : "pin to the top")
         .on_click((_e, cx) => {
           cx.stop_propagation();
           this.setPins(isPinned ? this.pins.filter((p) => p !== a.address) : [...this.pins, a.address]);
@@ -381,7 +435,7 @@ export default class Agents extends View {
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a
     // space are next to each other in agents(), so neighbours make a group.
-    const groups = pinned.length ? [{ id: "pinned", label: "Pinned", status: null, members: pinned }] : [];
+    const groups = pinned.length ? [{ id: "pinned", label: "pinned", status: null, members: pinned }] : [];
     for (const a of rest) {
       const r = rankOf(a) || RANK.idle;
       const id = byPriority ? `sec-${r}` : `sp-${a.space}`;
@@ -437,7 +491,7 @@ export default class Agents extends View {
             .flex_none()
             .items_center()
             .justify_between()
-            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("Agents"))
+            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("agents"))
             .child(
               div()
                 .id("ag-sort")
@@ -445,13 +499,13 @@ export default class Agents extends View {
                 .text_color(t.dim)
                 .hover((s) => s.text_color(t.foreground))
                 .on_click(() => openOverlay({ mod: "agents", kind: "popup", width: 200, height: 140, props: { sortMenu: true } }))
-                .tooltip(`Sort agents: ${sort.label}`)
+                .tooltip(`sort agents: ${sort.label}`)
                 .child(svg(`mods/workspace-chrome/${sort.icon}.svg`).size(14)),
             ),
         ),
       )
       .when(list.length === 0 && !collapsed, (el) =>
-        el.child(div().px(12).text_size(12).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
+        el.child(div().px(12).text_size(12).text_color(t.dim).child("no agent status yet. agents show up here when they report their status. older versions and agents inside tmux may not.")),
       )
       .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows))
       .when(collapsed, (el) =>

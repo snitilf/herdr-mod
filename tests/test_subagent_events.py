@@ -24,6 +24,12 @@ class LifecycleTests(unittest.TestCase):
             bridge.update(state, provider, 't9', event('SubagentStart', agent_id='a', agent_type='default'))
             self.assertEqual(state['terminals']['t9']['agents']['a']['name'], 'Agent')
 
+    def test_records_transcript_path_without_conversation_content(self):
+        state = {'version': 1, 'terminals': {}}
+        bridge.update(state, 'codex', 't9', event('SubagentStart', agent_id='a', transcript_path='/example/session.jsonl', prompt='private'))
+        self.assertEqual(state['terminals']['t9']['agents']['a']['transcript'], '/example/session.jsonl')
+        self.assertNotIn('private', json.dumps(state))
+
     def test_provider_lifecycle_and_session_isolation(self):
         for provider in ('codex', 'claude'):
             state = {'version': 1, 'terminals': {}}
@@ -45,6 +51,13 @@ class LifecycleTests(unittest.TestCase):
         bridge.update(state, 'codex', 't2', event('SubagentStop', agent_id='old'))
         self.assertEqual(state['terminals']['t2']['session'], 'new')
         self.assertEqual(state['terminals']['t2']['agents'], {})
+
+    def test_new_subagent_replaces_empty_old_session(self):
+        state = {'version': 1, 'terminals': {}}
+        bridge.update(state, 'codex', 't2', event('SessionStart', session='old'))
+        bridge.update(state, 'codex', 't2', event('SubagentStart', session='new', agent_id='a'))
+        self.assertEqual(state['terminals']['t2']['session'], 'new')
+        self.assertIn('a', state['terminals']['t2']['agents'])
 
     def test_concurrent_events_are_not_lost(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -68,6 +81,11 @@ class LifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bridge.record('codex', '../bad', event('SessionStart'), Path(tmp))
             self.assertFalse((Path(tmp) / 'data').exists())
+
+    def test_hexadecimal_terminal_address(self):
+        state = {'version': 1, 'terminals': {}}
+        bridge.update(state, 'codex', 't1b', event('SubagentStart', agent_id='a', agent_type='default'))
+        self.assertEqual(state['terminals']['t1b']['agents']['a']['name'], 'Agent')
 
 if __name__ == '__main__':
     unittest.main()

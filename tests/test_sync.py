@@ -56,5 +56,12 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.run_sync('--apply'), 1)
         self.assertEqual(self.target.read_text(), 'existing')
 
+    def test_python_cache_is_not_synced(self):
+        cache = self.source / 'mods' / 'iris-agents' / '__pycache__' / 'reader.pyc'
+        cache.parent.mkdir(parents=True)
+        cache.write_bytes(b'cached')
+        self.assertEqual(self.run_sync('--apply'), 0)
+        self.assertFalse((self.live / 'mods' / 'iris-agents' / '__pycache__').exists())
+
 if __name__ == '__main__':
     unittest.main()

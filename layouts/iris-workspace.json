@@ -35,7 +35,7 @@
           },
           "window_drag": true,
           "content": {
-            "mod": "workspace-chrome"
+            "mod": "iris-chrome"
           }
         },
         {
@@ -73,7 +73,7 @@
             "px": 69
           },
           "content": {
-            "mod": "workspace-chrome",
+            "mod": "iris-chrome",
             "props": {
               "footer": true
             }
@@ -94,7 +94,7 @@
           },
           "window_drag": true,
           "content": {
-            "mod": "tabs"
+            "mod": "iris-tabs"
           }
         },
         {
@@ -123,7 +123,7 @@
                   },
                   "header": {
                     "content": {
-                      "mod": "pane"
+                      "mod": "iris-pane"
                     },
                     "height": 30,
                     "position": "top",
@@ -174,7 +174,7 @@
             "px": 28
           },
           "content": {
-            "mod": "workspace-status"
+            "mod": "iris-status"
           }
         }
       ]
